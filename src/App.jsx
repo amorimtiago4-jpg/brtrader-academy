@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 
 // ─── SUPABASE CONFIG ─────────────────────────────────────────────────────────
 const SUPA_URL = "https://vuhgcsraditjquklwoor.supabase.co";
-const SUPA_KEY = "sb_publishable_1czTmtoQVp15_t8F34RYmg_Td35BW9h";
+const SUPA_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZ1aGdjc3JhZGl0anF1a2x3b29yIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODc3NDYzNjYsImV4cCI6MjEwMzMyMjM2Nn0.e-iW0KBTbSErJXHb0X6gDw-ZDrnV5ymE3Fui0QhUtSE";
 
 const supaFetch = async (path, options = {}) => {
   const res = await fetch(SUPA_URL + "/rest/v1" + path, {
@@ -867,3 +867,4 @@ function AdminPanel({ adminCtx, users, logs, setUsersS, setLogsS, setScreen, sho
     </div>
   );
 }
+
