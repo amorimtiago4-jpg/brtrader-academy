@@ -1,6 +1,5 @@
 import { useState, useEffect } from "react";
-
-// ─── SUPABASE CONFIG ─────────────────────────────────────────────────────────
+ // ─── SUPABASE CONFIG ─────────────────────────────────────────────────────────
 const SUPA_URL = "https://vuhgcsraditjquklwoor.supabase.co";
 const SUPA_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZ1aGdjc3JhZGl0anF1a2x3b29yIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODc3NDYzNjYsImV4cCI6MjEwMzMyMjM2Nn0.e-iW0KBTbSErJXHb0X6gDw-ZDrnV5ymE3Fui0QhUtSE";
 
