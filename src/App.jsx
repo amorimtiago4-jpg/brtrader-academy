@@ -1,4 +1,4 @@
-mport { useState, useEffect } from "react";
+import { useState, useEffect } from "react";
 
 // ─── SUPABASE CONFIG ─────────────────────────────────────────────────────────
 const SUPA_URL = "https://vuhgcsraditjquklwoor.supabase.co";
@@ -83,6 +83,7 @@ const getLogs = async () => {
       id: l.id, userId: l.user_id, date: l.date,
       result: Number(l.result), followed: l.followed,
       status: l.status, level: l.level, session: l.session,
+      operations: l.operations || 1,
     }));
   } catch(e) { console.error("getLogs:", e); return []; }
 };
@@ -96,6 +97,7 @@ const saveLog = async (log) => {
         id: log.id, user_id: log.userId, date: log.date,
         result: log.result, followed: log.followed,
         status: log.status, level: log.level, session: log.session,
+        operations: log.operations || 1,
       }),
     });
   } catch(e) { console.error("saveLog:", e); throw e; }
@@ -224,6 +226,37 @@ const computePoints = (logs, userId, session) => {
       if (l.status === "yellow") pts += 10;
       return sum + pts;
     }, 0);
+};
+
+// Média de pontos do mês atual
+const computeMonthAvg = (logs, userId, session) => {
+  const now = new Date();
+  const monthStr = now.toISOString().slice(0, 7); // "2026-08"
+  const monthLogs = logs.filter(l => l.userId === userId && (!session || l.session === session) && l.date.startsWith(monthStr));
+  if (monthLogs.length === 0) return 0;
+  const totalPts = monthLogs.reduce((sum, l) => {
+    let pts = 0;
+    if (l.followed) pts += 10;
+    if (l.status === "green") pts += 20;
+    if (l.status === "yellow") pts += 10;
+    return sum + pts;
+  }, 0);
+  return Math.round(totalPts / monthLogs.length);
+};
+
+// Progresso para promoção (0-100%)
+const computePromotionProgress = (logs, userId, session) => {
+  const twoWeeksAgo = new Date();
+  twoWeeksAgo.setDate(twoWeeksAgo.getDate() - 14);
+  const recent = logs.filter(l => l.userId === userId && (!session || l.session === session) && new Date(l.date) >= twoWeeksAgo);
+  if (recent.length === 0) return { pct: 0, goodDays: 0, totalDays: 0, needed: 10 };
+  const goodDays = recent.filter(l => l.followed && (l.status === "green" || l.status === "yellow")).length;
+  return {
+    pct: Math.min(100, Math.round((goodDays / 10) * 100)),
+    goodDays,
+    totalDays: recent.length,
+    needed: Math.max(0, 10 - goodDays),
+  };
 };
 
 const checkPromotion = (logs, userId, currentLevel, session) => {
@@ -679,8 +712,9 @@ function Dashboard({ curUser, users, logs, setLogsS, setUsersS, setScreen, showT
   const user = users[curUser.id] || curUser;
   const [tab, setTab]         = useState("register");
   const [session, setSession] = useState("indice");
-  const [result, setResult]   = useState("");
+  const [result, setResult]     = useState("");
   const [followed, setFollowed] = useState(true);
+  const [ops, setOps]           = useState("");
 
   const ses        = SESSIONS[session];
   const levelKey   = session === "indice" ? "levelIndice" : "levelForex";
@@ -701,11 +735,12 @@ function Dashboard({ curUser, users, logs, setLogsS, setUsersS, setScreen, showT
     const val = parseFloat(result.replace(",", "."));
     if (isNaN(val)) { showToast("Digite um valor válido.", "error"); return; }
     const status = computeStatus(val, curLevel, session);
-    const newLog = { id: Date.now().toString(), userId: user.id, date: today(), result: val, followed, status, level: curLevel, session };
+    const numOps = parseInt(ops) || 1;
+    const newLog = { id: Date.now().toString(), userId: user.id, date: today(), result: val, followed, status, level: curLevel, session, operations: numOps };
     await saveLog(newLog);
     const updated = [...logs, newLog];
     setLogsS(updated);
-    setResult("");
+    setResult(""); setOps("");
     showToast(status === "green" ? "✓ Meta atingida! +20 pontos" : "Resultado registrado!");
     refresh();
   };
@@ -769,18 +804,37 @@ function Dashboard({ curUser, users, logs, setLogsS, setUsersS, setScreen, showT
             <div style={{fontSize:11,color:"#00593D",marginTop:4}}>
               {session==="forex" ? lv.size+" tic (lote)" : lv.size+(lv.size>1?" contratos":" contrato")} · Mín. {fmtVal(lv.minBank, session)} · Meta {fmtVal(lv.minGoal, session)}–{fmtVal(lv.maxGoal, session)}/dia
             </div>
-            <div style={{marginTop:8,background:"#000000",border:"1px solid #00F1A533",borderRadius:6,padding:"10px 12px"}}>
-              <div style={{fontSize:10,color:"#00593D",marginBottom:4,letterSpacing:".06em",textTransform:"uppercase"}}>💰 Projeção salarial neste nível</div>
-              <div style={{fontSize:15,fontWeight:800,color:"#00F1A5"}}>{lv.salLabel}</div>
-              <div style={{fontSize:10,color:"#00593D",marginTop:2}}>seguindo a metodologia · 22 dias úteis/mês</div>
-              <div style={{marginTop:8,paddingTop:8,borderTop:"1px solid #003D28",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-                <div>
-                  <div style={{fontSize:10,color:"#00593D",marginBottom:2,textTransform:"uppercase",letterSpacing:".06em"}}>⏱ Tempo estimado para subir</div>
-                  <div style={{fontSize:13,fontWeight:700,color:"#D2FFF1"}}>{lv.dias}</div>
-                  <div style={{fontSize:10,color:"#00593D",marginTop:2}}>{lv.diasDesc}</div>
-                </div>
-              </div>
-            </div>
+            {/* Progresso de promoção */}
+            {(() => {
+              const prog = computePromotionProgress(logs, user.id, session);
+              const monthAvg = computeMonthAvg(logs, user.id, session);
+              return (
+                <>
+                  <div style={{marginTop:10,background:"#000000",border:"1px solid #003D28",borderRadius:6,padding:"10px 12px"}}>
+                    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6}}>
+                      <div style={{fontSize:10,color:"#00593D",textTransform:"uppercase",letterSpacing:".06em"}}>🎯 Progresso para promoção</div>
+                      <div style={{fontSize:13,fontWeight:800,color:prog.pct>=100?"#00F1A5":"#C9A84C"}}>{prog.pct}%</div>
+                    </div>
+                    <div style={{background:"#1A2640",borderRadius:4,height:8,overflow:"hidden"}}>
+                      <div style={{height:"100%",width:prog.pct+"%",background:prog.pct>=100?"#00F1A5":"#C9A84C",borderRadius:4,transition:"width .5s"}}/>
+                    </div>
+                    <div style={{fontSize:10,color:"#00593D",marginTop:4}}>
+                      {prog.pct>=100 ? "✓ Elegível para promoção!" : prog.goodDays+" de 10 dias · faltam "+prog.needed+" dias seguindo o método"}
+                    </div>
+                  </div>
+                  <div style={{marginTop:6,background:"#000000",border:"1px solid #00F1A533",borderRadius:6,padding:"10px 12px",display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
+                    <div>
+                      <div style={{fontSize:10,color:"#00593D",marginBottom:2,textTransform:"uppercase",letterSpacing:".06em"}}>📊 Média pts/dia (mês)</div>
+                      <div style={{fontSize:18,fontWeight:800,color:"#00F1A5"}}>{monthAvg} pts</div>
+                    </div>
+                    <div>
+                      <div style={{fontSize:10,color:"#00593D",marginBottom:2,textTransform:"uppercase",letterSpacing:".06em"}}>💰 Projeção salarial</div>
+                      <div style={{fontSize:12,fontWeight:700,color:"#D2FFF1"}}>{lv.salLabel}</div>
+                    </div>
+                  </div>
+                </>
+              );
+            })()}
           </div>
           {eligible && curLevel < 5 && (
             <button onClick={promote} style={{background:"#00F1A5",color:"#000000",border:"none",borderRadius:6,padding:"6px 10px",fontSize:11,fontWeight:700,cursor:"pointer"}}>⬆ Subir</button>
@@ -878,6 +932,7 @@ function Dashboard({ curUser, users, logs, setLogsS, setUsersS, setScreen, showT
                 <SesBadge sessionId={log.session} />
                 <StatusPill status={log.status} />
                 <DiscPill followed={log.followed} />
+                {log.operations > 0 && <span style={{background:"#071410",border:"1px solid #003D28",color:"#89BAAA",borderRadius:4,padding:"2px 8px",fontSize:11}}>{log.operations} op.</span>}
               </div>
             </div>
           ))}
@@ -1028,7 +1083,7 @@ function AdminPanel({ adminCtx, users, logs, setUsersS, setLogsS, setScreen, sho
       </div>
 
       {/* Summary */}
-      <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:6,padding:"10px 16px 0"}}>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:6,padding:"10px 16px 0"}}>
         {[
           {label:"Alunos",     value:allUsers.length,               color:"#89BAAA"},
           {label:"Hoje",       value:usersWithLog.length+"/"+allUsers.length, color:"#00F1A5"},
