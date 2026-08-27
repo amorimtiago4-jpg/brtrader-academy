@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+mport { useState, useEffect } from "react";
 
 // ─── SUPABASE CONFIG ─────────────────────────────────────────────────────────
 const SUPA_URL = "https://vuhgcsraditjquklwoor.supabase.co";
@@ -99,6 +99,56 @@ const saveLog = async (log) => {
       }),
     });
   } catch(e) { console.error("saveLog:", e); throw e; }
+};
+
+const updateLog = async (logId, newResult, newFollowed, newStatus) => {
+  try {
+    await supaFetch("/logs?id=eq." + logId, {
+      method: "PATCH",
+      body: JSON.stringify({ result: newResult, followed: newFollowed, status: newStatus }),
+    });
+  } catch(e) { console.error("updateLog:", e); throw e; }
+};
+
+const getEditRequests = async () => {
+  try {
+    const rows = await supaFetch("/edit_requests?select=*&order=created_at.desc");
+    return rows || [];
+  } catch(e) { console.error("getEditRequests:", e); return []; }
+};
+
+const saveEditRequest = async (req) => {
+  try {
+    await supaFetch("/edit_requests", {
+      method: "POST",
+      body: JSON.stringify(req),
+    });
+  } catch(e) { console.error("saveEditRequest:", e); throw e; }
+};
+
+const updateEditRequest = async (id, status) => {
+  try {
+    await supaFetch("/edit_requests?id=eq." + id, {
+      method: "PATCH",
+      body: JSON.stringify({ status }),
+    });
+  } catch(e) { console.error("updateEditRequest:", e); throw e; }
+};
+
+const getProfessorResults = async () => {
+  try {
+    const rows = await supaFetch("/professor_results?select=*&order=date.desc");
+    return rows || [];
+  } catch(e) { console.error("getProfessorResults:", e); return []; }
+};
+
+const saveProfessorResult = async (r) => {
+  try {
+    await supaFetch("/professor_results", {
+      method: "POST",
+      body: JSON.stringify(r),
+    });
+  } catch(e) { console.error("saveProfessorResult:", e); throw e; }
 };
 
 const setLogs = async () => {}; // não usado diretamente
@@ -263,9 +313,11 @@ export default function App() {
   useEffect(() => {
     (async () => {
       try {
-        const [u, l] = await Promise.all([getUsers(), getLogs()]);
+        const [u, l, er, pr] = await Promise.all([getUsers(), getLogs(), getEditRequests(), getProfessorResults()]);
         setUsersS(u);
         setLogsS(l);
+        setEditReqs(er);
+        setProfResults(pr);
       } catch(e) {
         console.error("Erro ao carregar dados:", e);
       } finally {
@@ -279,11 +331,16 @@ export default function App() {
     setTimeout(() => setToast(null), 3500);
   };
 
+  const [editReqs, setEditReqs]     = useState([]);
+  const [profResults, setProfResults] = useState([]);
+
   const refresh = async () => {
     try {
-      const [u, l] = await Promise.all([getUsers(), getLogs()]);
+      const [u, l, er, pr] = await Promise.all([getUsers(), getLogs(), getEditRequests(), getProfessorResults()]);
       setUsersS(u);
       setLogsS(l);
+      setEditReqs(er);
+      setProfResults(pr);
     } catch(e) { console.error("refresh:", e); }
   };
 
@@ -304,11 +361,143 @@ export default function App() {
       )}
       {screen === "login"     && <LoginScreen     setScreen={setScreen} setCurUser={setCurUser} setAdminCtx={setAdminCtx} users={users} showToast={showToast} />}
       {screen === "register"  && <RegisterScreen  setScreen={setScreen} users={users} setUsersS={setUsersS} showToast={showToast} />}
-      {screen === "dashboard" && <Dashboard       curUser={curUser} users={users} logs={logs} setLogsS={setLogsS} setUsersS={setUsersS} setScreen={setScreen} showToast={showToast} refresh={refresh} />}
-      {screen === "admin"     && <AdminPanel      adminCtx={adminCtx} users={users} logs={logs} setUsersS={setUsersS} setLogsS={setLogsS} setScreen={setScreen} showToast={showToast} refresh={refresh} />}
+      {screen === "dashboard" && <Dashboard       curUser={curUser} users={users} logs={logs} setLogsS={setLogsS} setUsersS={setUsersS} setScreen={setScreen} showToast={showToast} refresh={refresh} editReqs={editReqs} profResults={profResults} />}
+      {screen === "admin"     && <AdminPanel      adminCtx={adminCtx} users={users} logs={logs} setUsersS={setUsersS} setLogsS={setLogsS} setScreen={setScreen} showToast={showToast} refresh={refresh} editReqs={editReqs} profResults={profResults} />}
+      {/* Edits tab */}
+      {tab === "edits" && (
+        <div style={{margin:"12px 16px 0"}}>
+          <div style={{fontSize:12,color:"#00593D",marginBottom:10,fontWeight:600,textTransform:"uppercase",letterSpacing:".06em"}}>✏️ Solicitações de edição pendentes</div>
+          {(editReqs||[]).filter(r=>r.status==="pending"&&r.session===viewSes).length===0 ? (
+            <div style={{textAlign:"center",padding:40,color:"#00593D"}}>Nenhuma solicitação pendente no {ses.label}.</div>
+          ) : (editReqs||[]).filter(r=>r.status==="pending").map(req => {
+            const reqUser = users[req.user_id];
+            const origLog = logs.find(l=>l.id===req.log_id);
+            if (!reqUser || !origLog) return null;
+            return (
+              <div key={req.id} style={{background:"#0D1A0D",border:"1px solid #C9A84C33",borderRadius:10,padding:"14px",marginBottom:10}}>
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:8}}>
+                  <div>
+                    <div style={{fontSize:14,fontWeight:600}}>{reqUser.name}</div>
+                    <div style={{fontSize:11,color:"#00593D"}}>{origLog.date} · {SESSIONS[origLog.session]?.label}</div>
+                  </div>
+                  <div style={{textAlign:"right"}}>
+                    <div style={{fontSize:11,color:"#89BAAA"}}>De: <strong style={{color:"#E05C5C"}}>{origLog.result}</strong></div>
+                    <div style={{fontSize:11,color:"#89BAAA"}}>Para: <strong style={{color:"#00F1A5"}}>{req.new_result}</strong></div>
+                  </div>
+                </div>
+                <div style={{display:"flex",gap:8}}>
+                  <button onClick={async()=>{
+                    const lv = origLog.level;
+                    const sid = origLog.session;
+                    const newStatus = computeStatus(req.new_result, lv, sid);
+                    await updateLog(req.log_id, req.new_result, req.new_followed, newStatus);
+                    await updateEditRequest(req.id, "approved");
+                    showToast("✓ Edição aprovada!");
+                    refresh();
+                  }} style={{flex:1,background:"#001A0F",border:"1px solid #00F1A5",color:"#00F1A5",borderRadius:8,padding:"8px",fontWeight:700,cursor:"pointer",fontSize:13}}>
+                    ✓ Aprovar
+                  </button>
+                  <button onClick={async()=>{
+                    await updateEditRequest(req.id, "rejected");
+                    showToast("Edição rejeitada.");
+                    refresh();
+                  }} style={{flex:1,background:"#1A0808",border:"1px solid #E05C5C",color:"#E05C5C",borderRadius:8,padding:"8px",fontWeight:700,cursor:"pointer",fontSize:13}}>
+                    ✕ Rejeitar
+                  </button>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* Performance tab — só para diretor */}
+      {tab === "performance" && (
+        <div style={{margin:"12px 16px 0"}}>
+          <div style={{fontSize:12,color:"#00593D",marginBottom:10,fontWeight:600,textTransform:"uppercase",letterSpacing:".06em"}}>📊 Lançar performance do professor</div>
+          {isDiretor ? (
+            <ProfessorPerformanceForm profResults={profResults} showToast={showToast} refresh={refresh}/>
+          ) : (
+            <div style={{textAlign:"center",padding:40,color:"#00593D"}}>Apenas o diretor pode lançar performance.</div>
+          )}
+          <div style={{marginTop:16}}>
+            <div style={{fontSize:12,color:"#00593D",marginBottom:8,fontWeight:600}}>Histórico recente</div>
+            {(profResults||[]).slice(0,10).map(r=>(
+              <div key={r.id} style={{background:"#0D1A0D",border:"1px solid #003D28",borderRadius:8,padding:"10px 14px",marginBottom:6,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                <div>
+                  <div style={{fontSize:13,fontWeight:600}}>{r.professor}</div>
+                  <div style={{fontSize:11,color:"#00593D"}}>{SESSIONS[r.session]?.label} · {r.date}</div>
+                  {r.note&&<div style={{fontSize:11,color:"#89BAAA",fontStyle:"italic"}}>"{r.note}"</div>}
+                </div>
+                <div style={{fontSize:18,fontWeight:800,color:SESSIONS[r.session]?.color||"#00F1A5"}}>{r.points}pts</div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
     </div>
   );
 }
+
+// ─── PROFESSOR PERFORMANCE FORM ───────────────────────────────────────────────
+function ProfessorPerformanceForm({ profResults, showToast, refresh }) {
+  const [professor, setProfessor] = useState("Elias Júnior");
+  const [session, setSession]     = useState("indice");
+  const [points, setPoints]       = useState("");
+  const [note, setNote]           = useState("");
+  const [loading, setLoading]     = useState(false);
+
+  const inp2 = {width:"100%",background:"#000000",border:"1px solid #003D28",borderRadius:8,color:"#FFFFFF",padding:"8px 10px",fontSize:13,marginBottom:10,outline:"none",boxSizing:"border-box"};
+
+  const submit = async () => {
+    if (!points) { showToast("Informe os pontos.", "error"); return; }
+    const val = parseFloat(points);
+    if (isNaN(val)) { showToast("Valor inválido.", "error"); return; }
+    setLoading(true);
+    try {
+      await saveProfessorResult({
+        id: Date.now().toString(),
+        professor,
+        session,
+        date: today(),
+        points: val,
+        note,
+        created_at: new Date().toISOString(),
+      });
+      showToast("Performance lançada!");
+      setPoints(""); setNote("");
+      refresh();
+    } catch(e) {
+      showToast("Erro ao salvar.", "error");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div style={{background:"#0D1A0D",border:"1px solid #003D28",borderRadius:10,padding:"16px 14px",marginBottom:12}}>
+      <label style={{fontSize:10,color:"#89BAAA",textTransform:"uppercase",letterSpacing:".08em"}}>Professor</label>
+      <select value={professor} onChange={e=>setProfessor(e.target.value)} style={{...inp2,marginTop:4}}>
+        <option value="Elias Júnior">Elias Júnior — Mini Índice</option>
+        <option value="Diego">Diego — Forex</option>
+      </select>
+      <label style={{fontSize:10,color:"#89BAAA",textTransform:"uppercase",letterSpacing:".08em"}}>Sessão</label>
+      <select value={session} onChange={e=>setSession(e.target.value)} style={{...inp2,marginTop:4}}>
+        <option value="indice">🇧🇷 Mini Índice (Manhã)</option>
+        <option value="forex">🌐 Forex (Noite)</option>
+      </select>
+      <label style={{fontSize:10,color:"#89BAAA",textTransform:"uppercase",letterSpacing:".08em"}}>Pontos do dia</label>
+      <input value={points} onChange={e=>setPoints(e.target.value)} style={{...inp2,marginTop:4}} placeholder="Ex: 850" type="number"/>
+      <label style={{fontSize:10,color:"#89BAAA",textTransform:"uppercase",letterSpacing:".08em"}}>Observação (opcional)</label>
+      <input value={note} onChange={e=>setNote(e.target.value)} style={{...inp2,marginTop:4}} placeholder="Ex: Mercado volátil hoje"/>
+      <button onClick={submit} disabled={loading} style={{width:"100%",background:"#00F1A5",color:"#000000",border:"none",borderRadius:8,padding:"10px",fontSize:13,fontWeight:700,cursor:"pointer",opacity:loading?.7:1}}>
+        {loading?"Salvando...":"Lançar performance"}
+      </button>
+    </div>
+  );
+}
+
 
 function LoginScreen({ setScreen, setCurUser, setAdminCtx, users, showToast }) {
   const [email, setEmail] = useState("");
@@ -426,7 +615,67 @@ function RegisterScreen({ setScreen, users, setUsersS, showToast }) {
   );
 }
 
-function Dashboard({ curUser, users, logs, setLogsS, setUsersS, setScreen, showToast, refresh }) {
+
+// ─── EDIT REQUEST FORM ────────────────────────────────────────────────────────
+function EditRequestForm({ logs, userId, showToast, refresh }) {
+  const [selectedLog, setSelectedLog] = useState(logs[0]?.id || "");
+  const [newResult, setNewResult] = useState("");
+  const [newFollowed, setNewFollowed] = useState(true);
+  const [loading, setLoading] = useState(false);
+
+  const submit = async () => {
+    if (!selectedLog || !newResult) { showToast("Preencha todos os campos.", "error"); return; }
+    const val = parseFloat(newResult.replace(",", "."));
+    if (isNaN(val)) { showToast("Valor inválido.", "error"); return; }
+    setLoading(true);
+    try {
+      const log = logs.find(l => l.id === selectedLog);
+      await saveEditRequest({
+        id: Date.now().toString(),
+        log_id: selectedLog,
+        user_id: userId,
+        new_result: val,
+        new_followed: newFollowed,
+        status: "pending",
+        created_at: new Date().toISOString(),
+        session: log?.session || "",
+      });
+      showToast("Solicitação enviada! Aguarde aprovação do professor.");
+      setNewResult("");
+      refresh();
+    } catch(e) {
+      showToast("Erro ao enviar. Tente novamente.", "error");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const inp2 = {width:"100%",background:"#000000",border:"1px solid #003D28",borderRadius:8,color:"#FFFFFF",padding:"8px 10px",fontSize:13,marginBottom:10,outline:"none",boxSizing:"border-box"};
+
+  return (
+    <div>
+      <label style={{fontSize:10,color:"#89BAAA",textTransform:"uppercase",letterSpacing:".08em"}}>Qual registro editar</label>
+      <select value={selectedLog} onChange={e=>setSelectedLog(e.target.value)} style={{...inp2,marginTop:4}}>
+        {logs.map(l => <option key={l.id} value={l.id}>{SESSIONS[l.session]?.label} — {l.date} — {l.result >= 0 ? "+" : ""}{l.result}</option>)}
+      </select>
+      <label style={{fontSize:10,color:"#89BAAA",textTransform:"uppercase",letterSpacing:".08em"}}>Novo resultado</label>
+      <input value={newResult} onChange={e=>setNewResult(e.target.value)} style={{...inp2,marginTop:4}} placeholder="Ex: 100" type="number"/>
+      <label style={{fontSize:10,color:"#89BAAA",textTransform:"uppercase",letterSpacing:".08em"}}>Seguiu o professor?</label>
+      <div style={{display:"flex",gap:8,marginBottom:10,marginTop:4}}>
+        {[true,false].map(f=>(
+          <button key={String(f)} onClick={()=>setNewFollowed(f)} style={{flex:1,padding:"8px",borderRadius:8,border:"1px solid "+(newFollowed===f?(f?"#00F1A5":"#E05C5C"):"#003D28"),background:newFollowed===f?(f?"#001A0F":"#1A0808"):"#000000",color:newFollowed===f?(f?"#00F1A5":"#E05C5C"):"#00593D",fontWeight:600,cursor:"pointer",fontSize:12}}>
+            {f?"✓ Sim":"✕ Não"}
+          </button>
+        ))}
+      </div>
+      <button onClick={submit} disabled={loading} style={{width:"100%",background:"#C9A84C",color:"#000000",border:"none",borderRadius:8,padding:"10px",fontSize:13,fontWeight:700,cursor:"pointer",opacity:loading?.7:1}}>
+        {loading?"Enviando...":"Solicitar edição"}
+      </button>
+    </div>
+  );
+}
+
+function Dashboard({ curUser, users, logs, setLogsS, setUsersS, setScreen, showToast, refresh, editReqs, profResults }) {
   const user = users[curUser.id] || curUser;
   const [tab, setTab]         = useState("register");
   const [session, setSession] = useState("indice");
@@ -635,6 +884,61 @@ function Dashboard({ curUser, users, logs, setLogsS, setUsersS, setScreen, showT
         </div>
       )}
 
+      {/* Transparency tab */}
+      {tab === "transparency" && (
+        <div style={{margin:"12px 16px 0"}}>
+          <div style={{fontSize:12,color:"#00593D",marginBottom:12,fontWeight:600,textTransform:"uppercase",letterSpacing:".06em"}}>🔍 Performance das Salas — Hoje</div>
+          {Object.values(SESSIONS).map(s => {
+            const pr = (profResults || []).filter(r => r.session === s.id && r.date === today());
+            const latestPr = pr[0];
+            const sesLogs = logs.filter(l => l.session === s.id && l.date === today());
+            const positivos = sesLogs.filter(l => l.result > 0).length;
+            const seguiram = sesLogs.filter(l => l.followed).length;
+            return (
+              <div key={s.id} style={{background:"#0D1A0D",border:"1px solid "+s.color+"33",borderLeft:"3px solid "+s.color,borderRadius:10,padding:"16px 14px",marginBottom:12}}>
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:10}}>
+                  <div>
+                    <div style={{fontSize:13,fontWeight:700,color:s.color}}>{s.icon} {s.label}</div>
+                    <div style={{fontSize:11,color:"#00593D"}}>Prof. {s.professor}</div>
+                  </div>
+                  {latestPr && (
+                    <div style={{textAlign:"right"}}>
+                      <div style={{fontSize:18,fontWeight:800,color:s.color}}>{latestPr.points} pts</div>
+                      <div style={{fontSize:10,color:"#00593D"}}>hoje</div>
+                    </div>
+                  )}
+                </div>
+                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8}}>
+                  {[
+                    {label:"Alunos hoje",  value:sesLogs.length,  color:"#89BAAA"},
+                    {label:"No positivo",  value:positivos,       color:"#00F1A5"},
+                    {label:"Seguiram",     value:seguiram,        color:"#00F1A5"},
+                  ].map((s,i) => (
+                    <div key={i} style={{background:"#000000",borderRadius:6,padding:"8px 6px",textAlign:"center"}}>
+                      <div style={{fontSize:9,color:"#00593D"}}>{s.label}</div>
+                      <div style={{fontSize:16,fontWeight:800,color:s.color}}>{s.value}</div>
+                    </div>
+                  ))}
+                </div>
+                {latestPr?.note && <div style={{marginTop:8,fontSize:12,color:"#89BAAA",fontStyle:"italic"}}>"{latestPr.note}"</div>}
+              </div>
+            );
+          })}
+
+          {/* Solicitação de edição de resultado */}
+          <div style={{marginTop:16,background:"#071410",border:"1px solid #003D28",borderRadius:10,padding:"14px 14px"}}>
+            <div style={{fontSize:12,color:"#00593D",marginBottom:10,fontWeight:600,textTransform:"uppercase",letterSpacing:".06em"}}>✏️ Solicitar edição de resultado</div>
+            {(() => {
+              const todayUserLogs = logs.filter(l => l.userId === (users[curUser.id]||curUser).id && l.date === today()).sort((a,b) => b.session.localeCompare(a.session));
+              const pendingReqs = (editReqs||[]).filter(r => r.user_id === (users[curUser.id]||curUser).id && r.status === "pending");
+              if (pendingReqs.length > 0) return <div style={{color:"#C9A84C",fontSize:13,textAlign:"center",padding:"10px 0"}}>⏳ Você tem {pendingReqs.length} solicitação(ões) pendente(s) aguardando aprovação do professor.</div>;
+              if (todayUserLogs.length === 0) return <div style={{color:"#00593D",fontSize:13,textAlign:"center",padding:"10px 0"}}>Registre um resultado hoje para poder solicitar edição.</div>;
+              return <EditRequestForm logs={todayUserLogs} userId={(users[curUser.id]||curUser).id} showToast={showToast} refresh={refresh} />;
+            })()}
+          </div>
+        </div>
+      )}
+
       {/* Ranking tab */}
       {tab === "ranking" && (
         <div style={{margin:"12px 16px 0"}}>
@@ -665,7 +969,7 @@ function Dashboard({ curUser, users, logs, setLogsS, setUsersS, setScreen, showT
   );
 }
 
-function AdminPanel({ adminCtx, users, logs, setUsersS, setLogsS, setScreen, showToast, refresh }) {
+function AdminPanel({ adminCtx, users, logs, setUsersS, setLogsS, setScreen, showToast, refresh, editReqs, profResults }) {
   const isDiretor = adminCtx?.role === "diretor";
   const [viewSes, setViewSes]   = useState(isDiretor ? "indice" : (adminCtx?.session || "indice"));
   const [tab, setTab]           = useState("today");
@@ -739,8 +1043,8 @@ function AdminPanel({ adminCtx, users, logs, setUsersS, setLogsS, setScreen, sho
       </div>
 
       {/* Tabs */}
-      <div style={{display:"flex",margin:"12px 16px 0",background:"#071410",borderRadius:8,padding:4}}>
-        {[["today","📅 Hoje"],["students","👥 Alunos"],["ranking","🏆 Ranking"],["promote","⬆ Promoções"]].map(([k,label]) => (
+      <div style={{display:"flex",margin:"12px 16px 0",background:"#071410",borderRadius:8,padding:4,flexWrap:"wrap",gap:2}}>
+        {[["today","📅 Hoje"],["students","👥 Alunos"],["ranking","🏆 Ranking"],["promote","⬆ Promoções"],["edits","✏️ Edições"],["performance","📊 Performance"]].map(([k,label]) => (
           <button key={k} onClick={() => setTab(k)} style={{flex:1,background:tab===k?"#0D1A0D":"none",border:"none",color:tab===k?"#00F1A5":"#00593D",padding:"8px 2px",borderRadius:6,fontSize:11,fontWeight:600,cursor:"pointer"}}>
             {label}
           </button>
