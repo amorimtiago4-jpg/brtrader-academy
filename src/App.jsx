@@ -848,7 +848,6 @@ function Dashboard({ curUser, users, logs, setLogsS, setUsersS, setScreen, showT
       </div>
 
       {/* Jornada completa */}
-      {tab === "register" || true ? null : null}
       <div style={{margin:"10px 16px 0",background:"#071410",border:"1px solid #003D28",borderRadius:10,padding:"14px 14px"}}>
         <div style={{fontSize:11,color:"#00593D",marginBottom:10,letterSpacing:".06em",textTransform:"uppercase"}}>🗺 Sua jornada — {ses.label}</div>
         <div style={{display:"flex",gap:4,overflowX:"auto",paddingBottom:4}}>
