@@ -153,6 +153,37 @@ const saveProfessorResult = async (r) => {
   } catch(e) { console.error("saveProfessorResult:", e); throw e; }
 };
 
+const updateProfessorResult = async (id, points, note) => {
+  try {
+    await supaFetch("/professor_results?id=eq." + id, {
+      method: "PATCH",
+      body: JSON.stringify({ points, note }),
+    });
+  } catch(e) { console.error("updateProfessorResult:", e); throw e; }
+};
+
+const deleteProfessorResult = async (id) => {
+  try {
+    await supaFetch("/professor_results?id=eq." + id, { method: "DELETE" });
+  } catch(e) { console.error("deleteProfessorResult:", e); throw e; }
+};
+
+// Helpers de acumulado semanal e mensal de professores
+const profWeekTotal = (profResults, session) => {
+  const now = new Date();
+  const weekAgo = new Date(); weekAgo.setDate(now.getDate() - 7);
+  return (profResults||[])
+    .filter(r => r.session===session && new Date(r.date) >= weekAgo)
+    .reduce((sum, r) => sum + Number(r.points), 0);
+};
+
+const profMonthTotal = (profResults, session) => {
+  const monthStr = new Date().toISOString().slice(0,7);
+  return (profResults||[])
+    .filter(r => r.session===session && r.date.startsWith(monthStr))
+    .reduce((sum, r) => sum + Number(r.points), 0);
+};
+
 const setLogs = async () => {}; // não usado diretamente
 
 const SESSIONS = {
@@ -401,32 +432,53 @@ export default function App() {
 }
 
 // ─── PROFESSOR PERFORMANCE FORM ───────────────────────────────────────────────
-function ProfessorPerformanceForm({ profResults, showToast, refresh }) {
-  const [professor, setProfessor] = useState("Elias Júnior");
-  const [session, setSession]     = useState("indice");
-  const [points, setPoints]       = useState("");
-  const [note, setNote]           = useState("");
-  const [loading, setLoading]     = useState(false);
+function ProfessorPerformanceForm({ profResults, showToast, refresh, fixedSession }) {
+  const [points, setPoints]     = useState("");
+  const [tipo, setTipo]         = useState("gain"); // gain | loss
+  const [note, setNote]         = useState("");
+  const [loading, setLoading]   = useState(false);
+  const [editingId, setEditingId] = useState(null);
 
   const inp2 = {width:"100%",background:"#000000",border:"1px solid #003D28",borderRadius:8,color:"#FFFFFF",padding:"8px 10px",fontSize:13,marginBottom:10,outline:"none",boxSizing:"border-box"};
+
+  const session = fixedSession || "indice";
+  const ses = SESSIONS[session];
+  const todayResult = (profResults||[]).find(r => r.session===session && r.date===today());
+
+  const startEdit = (r) => {
+    setEditingId(r.id);
+    setPoints(Math.abs(r.points).toString());
+    setTipo(Number(r.points) >= 0 ? "gain" : "loss");
+    setNote(r.note || "");
+  };
+
+  const cancelEdit = () => { setEditingId(null); setPoints(""); setNote(""); setTipo("gain"); };
 
   const submit = async () => {
     if (!points) { showToast("Informe os pontos.", "error"); return; }
     const val = parseFloat(points);
-    if (isNaN(val)) { showToast("Valor inválido.", "error"); return; }
+    if (isNaN(val) || val < 0) { showToast("Valor inválido.", "error"); return; }
+    const finalVal = tipo === "loss" ? -val : val;
     setLoading(true);
     try {
-      await saveProfessorResult({
-        id: Date.now().toString(),
-        professor,
-        session,
-        date: today(),
-        points: val,
-        note,
-        created_at: new Date().toISOString(),
-      });
-      showToast("Performance lançada!");
-      setPoints(""); setNote("");
+      if (editingId) {
+        await updateProfessorResult(editingId, finalVal, note);
+        showToast("Resultado atualizado!");
+        setEditingId(null);
+      } else {
+        if (todayResult) { showToast("Já existe resultado para hoje. Edite o existente.", "error"); setLoading(false); return; }
+        await saveProfessorResult({
+          id: Date.now().toString(),
+          professor: ses.professor,
+          session,
+          date: today(),
+          points: finalVal,
+          note,
+          created_at: new Date().toISOString(),
+        });
+        showToast("Performance lançada!");
+      }
+      setPoints(""); setNote(""); setTipo("gain");
       refresh();
     } catch(e) {
       showToast("Erro ao salvar.", "error");
@@ -435,25 +487,67 @@ function ProfessorPerformanceForm({ profResults, showToast, refresh }) {
     }
   };
 
+  const recentResults = (profResults||[]).filter(r=>r.session===session).slice(0,10);
+
   return (
-    <div style={{background:"#0D1A0D",border:"1px solid #003D28",borderRadius:10,padding:"16px 14px",marginBottom:12}}>
-      <label style={{fontSize:10,color:"#89BAAA",textTransform:"uppercase",letterSpacing:".08em"}}>Professor</label>
-      <select value={professor} onChange={e=>setProfessor(e.target.value)} style={{...inp2,marginTop:4}}>
-        <option value="Elias Júnior">Elias Júnior — Mini Índice</option>
-        <option value="Diego">Diego — Forex</option>
-      </select>
-      <label style={{fontSize:10,color:"#89BAAA",textTransform:"uppercase",letterSpacing:".08em"}}>Sessão</label>
-      <select value={session} onChange={e=>setSession(e.target.value)} style={{...inp2,marginTop:4}}>
-        <option value="indice">🇧🇷 Mini Índice (Manhã)</option>
-        <option value="forex">🌐 Forex (Noite)</option>
-      </select>
-      <label style={{fontSize:10,color:"#89BAAA",textTransform:"uppercase",letterSpacing:".08em"}}>Pontos do dia</label>
-      <input value={points} onChange={e=>setPoints(e.target.value)} style={{...inp2,marginTop:4}} placeholder="Ex: 850" type="number"/>
-      <label style={{fontSize:10,color:"#89BAAA",textTransform:"uppercase",letterSpacing:".08em"}}>Observação (opcional)</label>
-      <input value={note} onChange={e=>setNote(e.target.value)} style={{...inp2,marginTop:4}} placeholder="Ex: Mercado volátil hoje"/>
-      <button onClick={submit} disabled={loading} style={{width:"100%",background:"#00F1A5",color:"#000000",border:"none",borderRadius:8,padding:"10px",fontSize:13,fontWeight:700,cursor:"pointer",opacity:loading?.7:1}}>
-        {loading?"Salvando...":"Lançar performance"}
-      </button>
+    <div>
+      <div style={{background:"#0D1A0D",border:"1px solid #003D28",borderRadius:10,padding:"16px 14px",marginBottom:12}}>
+        <div style={{fontSize:12,color:ses.color,fontWeight:700,marginBottom:12}}>{ses.icon} {ses.label} — {ses.professor}</div>
+        {todayResult && !editingId && (
+          <div style={{background:"#000000",border:"1px solid #C9A84C33",borderRadius:8,padding:"10px 12px",marginBottom:12,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+            <div>
+              <div style={{fontSize:10,color:"#00593D",marginBottom:2}}>RESULTADO DE HOJE</div>
+              <div style={{fontSize:18,fontWeight:800,color:Number(todayResult.points)>=0?"#00F1A5":"#E05C5C"}}>
+                {Number(todayResult.points)>=0?"+":""}{todayResult.points} pts
+              </div>
+              {todayResult.note && <div style={{fontSize:11,color:"#89BAAA",fontStyle:"italic"}}>"{todayResult.note}"</div>}
+            </div>
+            <button onClick={()=>startEdit(todayResult)} style={{background:"#1C1800",border:"1px solid #C9A84C",color:"#C9A84C",borderRadius:6,padding:"6px 12px",cursor:"pointer",fontSize:12,fontWeight:700}}>✏️ Editar</button>
+          </div>
+        )}
+        {(!todayResult || editingId) && (
+          <>
+            <label style={{fontSize:10,color:"#89BAAA",textTransform:"uppercase",letterSpacing:".08em"}}>Tipo de resultado</label>
+            <div style={{display:"flex",gap:8,marginBottom:10,marginTop:4}}>
+              {[["gain","📈 Gain"],["loss","📉 Loss"]].map(([t,label])=>(
+                <button key={t} onClick={()=>setTipo(t)} style={{flex:1,padding:"10px",borderRadius:8,border:"1px solid "+(tipo===t?(t==="gain"?"#00F1A5":"#E05C5C"):"#003D28"),background:tipo===t?(t==="gain"?"#001A0F":"#1A0808"):"#000000",color:tipo===t?(t==="gain"?"#00F1A5":"#E05C5C"):"#00593D",fontWeight:700,cursor:"pointer",fontSize:13}}>
+                  {label}
+                </button>
+              ))}
+            </div>
+            <label style={{fontSize:10,color:"#89BAAA",textTransform:"uppercase",letterSpacing:".08em"}}>Pontos {tipo==="loss"?"perdidos":"ganhos"} no dia</label>
+            <input value={points} onChange={e=>setPoints(e.target.value)} style={{...inp2,marginTop:4}} placeholder="Ex: 850" type="number" min="0"/>
+            <label style={{fontSize:10,color:"#89BAAA",textTransform:"uppercase",letterSpacing:".08em"}}>Observação (opcional)</label>
+            <input value={note} onChange={e=>setNote(e.target.value)} style={{...inp2,marginTop:4}} placeholder="Ex: Mercado volátil hoje"/>
+            <div style={{display:"flex",gap:8}}>
+              <button onClick={submit} disabled={loading} style={{flex:1,background:tipo==="gain"?"#00F1A5":"#E05C5C",color:"#000000",border:"none",borderRadius:8,padding:"10px",fontSize:13,fontWeight:700,cursor:"pointer",opacity:loading?.7:1}}>
+                {loading?"Salvando...":(editingId?"Salvar edição":"Lançar resultado")}
+              </button>
+              {editingId && <button onClick={cancelEdit} style={{background:"none",border:"1px solid #003D28",color:"#89BAAA",borderRadius:8,padding:"10px 14px",cursor:"pointer",fontSize:13}}>Cancelar</button>}
+            </div>
+          </>
+        )}
+      </div>
+      {/* Histórico */}
+      {recentResults.length > 0 && (
+        <div style={{background:"#071410",border:"1px solid #003D28",borderRadius:10,padding:"14px"}}>
+          <div style={{fontSize:10,color:"#00593D",marginBottom:10,textTransform:"uppercase",letterSpacing:".06em"}}>Histórico recente</div>
+          {recentResults.map(r=>(
+            <div key={r.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"8px 0",borderBottom:"1px solid #003D2833"}}>
+              <div>
+                <div style={{fontSize:12,color:"#89BAAA"}}>{r.date}</div>
+                {r.note && <div style={{fontSize:11,color:"#00593D",fontStyle:"italic"}}>"{r.note}"</div>}
+              </div>
+              <div style={{display:"flex",alignItems:"center",gap:8}}>
+                <div style={{fontSize:16,fontWeight:800,color:Number(r.points)>=0?"#00F1A5":"#E05C5C"}}>
+                  {Number(r.points)>=0?"+":""}{r.points} pts
+                </div>
+                <button onClick={()=>startEdit(r)} style={{background:"none",border:"1px solid #003D28",color:"#00593D",borderRadius:4,padding:"2px 8px",cursor:"pointer",fontSize:11}}>✏️</button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
@@ -872,6 +966,8 @@ function Dashboard({ curUser, users, logs, setLogsS, setUsersS, setScreen, showT
           {Object.values(SESSIONS).map(s => {
             const pr = (profResults || []).filter(r => r.session === s.id && r.date === today());
             const latestPr = pr[0];
+            const weekTotal = profWeekTotal(profResults, s.id);
+            const monthTotal = profMonthTotal(profResults, s.id);
             const sesLogs = logs.filter(l => l.session === s.id && l.date === today());
             const positivos = sesLogs.filter(l => l.result > 0).length;
             const seguiram = sesLogs.filter(l => l.followed).length;
@@ -882,26 +978,57 @@ function Dashboard({ curUser, users, logs, setLogsS, setUsersS, setScreen, showT
                     <div style={{fontSize:13,fontWeight:700,color:s.color}}>{s.icon} {s.label}</div>
                     <div style={{fontSize:11,color:"#00593D"}}>Prof. {s.professor}</div>
                   </div>
-                  {latestPr && (
-                    <div style={{textAlign:"right"}}>
-                      <div style={{fontSize:18,fontWeight:800,color:s.color}}>{latestPr.points} pts</div>
-                      <div style={{fontSize:10,color:"#00593D"}}>hoje</div>
-                    </div>
-                  )}
+                  <div style={{textAlign:"right"}}>
+                    {latestPr ? (
+                      <>
+                        <div style={{fontSize:18,fontWeight:800,color:Number(latestPr.points)>=0?"#00F1A5":"#E05C5C"}}>
+                          {Number(latestPr.points)>=0?"+":""}{latestPr.points} pts
+                        </div>
+                        <div style={{fontSize:10,color:"#00593D"}}>hoje</div>
+                      </>
+                    ) : (
+                      <div style={{fontSize:11,color:"#00593D"}}>Sem registro hoje</div>
+                    )}
+                  </div>
+                </div>
+                {/* Acumulado semanal e mensal */}
+                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:10}}>
+                  <div style={{background:"#000000",borderRadius:6,padding:"10px 8px",textAlign:"center"}}>
+                    <div style={{fontSize:9,color:"#00593D",marginBottom:2}}>ACUMULADO SEMANA</div>
+                    <div style={{fontSize:16,fontWeight:800,color:weekTotal>=0?"#00F1A5":"#E05C5C"}}>{weekTotal>=0?"+":""}{weekTotal} pts</div>
+                  </div>
+                  <div style={{background:"#000000",borderRadius:6,padding:"10px 8px",textAlign:"center"}}>
+                    <div style={{fontSize:9,color:"#00593D",marginBottom:2}}>ACUMULADO MÊS</div>
+                    <div style={{fontSize:16,fontWeight:800,color:monthTotal>=0?"#00F1A5":"#E05C5C"}}>{monthTotal>=0?"+":""}{monthTotal} pts</div>
+                  </div>
                 </div>
                 <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8}}>
                   {[
-                    {label:"Alunos hoje",  value:sesLogs.length,  color:"#89BAAA"},
-                    {label:"No positivo",  value:positivos,       color:"#00F1A5"},
-                    {label:"Seguiram",     value:seguiram,        color:"#00F1A5"},
-                  ].map((s,i) => (
+                    {label:"Alunos hoje", value:sesLogs.length,  color:"#89BAAA"},
+                    {label:"No positivo", value:positivos,       color:"#00F1A5"},
+                    {label:"Seguiram",    value:seguiram,        color:"#00F1A5"},
+                  ].map((si,i) => (
                     <div key={i} style={{background:"#000000",borderRadius:6,padding:"8px 6px",textAlign:"center"}}>
-                      <div style={{fontSize:9,color:"#00593D"}}>{s.label}</div>
-                      <div style={{fontSize:16,fontWeight:800,color:s.color}}>{s.value}</div>
+                      <div style={{fontSize:9,color:"#00593D"}}>{si.label}</div>
+                      <div style={{fontSize:16,fontWeight:800,color:si.color}}>{si.value}</div>
                     </div>
                   ))}
                 </div>
                 {latestPr?.note && <div style={{marginTop:8,fontSize:12,color:"#89BAAA",fontStyle:"italic"}}>"{latestPr.note}"</div>}
+                {/* Histórico recente */}
+                {(profResults||[]).filter(r=>r.session===s.id).slice(0,5).length > 0 && (
+                  <div style={{marginTop:10,paddingTop:10,borderTop:"1px solid #003D28"}}>
+                    <div style={{fontSize:9,color:"#00593D",marginBottom:6,textTransform:"uppercase",letterSpacing:".06em"}}>Últimos resultados</div>
+                    <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+                      {(profResults||[]).filter(r=>r.session===s.id).slice(0,7).map(r=>(
+                        <div key={r.id} style={{background:"#000000",borderRadius:4,padding:"4px 8px",fontSize:11}}>
+                          <span style={{color:"#00593D"}}>{r.date.slice(5)}</span>
+                          <span style={{color:Number(r.points)>=0?"#00F1A5":"#E05C5C",fontWeight:700,marginLeft:4}}>{Number(r.points)>=0?"+":""}{r.points}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
             );
           })}
