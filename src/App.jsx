@@ -441,9 +441,10 @@ function ProfessorPerformanceForm({ profResults, showToast, refresh, fixedSessio
 
   const inp2 = {width:"100%",background:"#000000",border:"1px solid #003D28",borderRadius:8,color:"#FFFFFF",padding:"8px 10px",fontSize:13,marginBottom:10,outline:"none",boxSizing:"border-box"};
 
+  const [dateInput, setDateInput] = useState(today());
   const session = fixedSession || "indice";
   const ses = SESSIONS[session];
-  const todayResult = (profResults||[]).find(r => r.session===session && r.date===today());
+  const todayResult = (profResults||[]).find(r => r.session===session && r.date===dateInput);
 
   const startEdit = (r) => {
     setEditingId(r.id);
@@ -471,7 +472,7 @@ function ProfessorPerformanceForm({ profResults, showToast, refresh, fixedSessio
           id: Date.now().toString(),
           professor: ses.professor,
           session,
-          date: today(),
+          date: dateInput,
           points: finalVal,
           note,
           created_at: new Date().toISOString(),
@@ -507,6 +508,8 @@ function ProfessorPerformanceForm({ profResults, showToast, refresh, fixedSessio
         )}
         {(!todayResult || editingId) && (
           <>
+            <label style={{fontSize:10,color:"#89BAAA",textTransform:"uppercase",letterSpacing:".08em"}}>Data do resultado</label>
+            <input value={dateInput} onChange={e=>setDateInput(e.target.value)} type="date" style={{...inp2,marginTop:4}}/>
             <label style={{fontSize:10,color:"#89BAAA",textTransform:"uppercase",letterSpacing:".08em"}}>Tipo de resultado</label>
             <div style={{display:"flex",gap:8,marginBottom:10,marginTop:4}}>
               {[["gain","📈 Gain"],["loss","📉 Loss"]].map(([t,label])=>(
@@ -1280,6 +1283,63 @@ function AdminPanel({ adminCtx, users, logs, setUsersS, setLogsS, setScreen, sho
           )}
         </div>
       )}
+
+      {/* Edits */}
+      {tab === "edits" && (
+        <div style={{margin:"12px 16px 0"}}>
+          <div style={{fontSize:12,color:"#00593D",marginBottom:10,fontWeight:600,textTransform:"uppercase",letterSpacing:".06em"}}>✏️ Solicitações de edição pendentes</div>
+          {(editReqs||[]).filter(r=>r.status==="pending").length===0 ? (
+            <div style={{textAlign:"center",padding:40,color:"#00593D"}}>Nenhuma solicitação pendente.</div>
+          ) : (editReqs||[]).filter(r=>r.status==="pending").map(req => {
+            const reqUser = users[req.user_id];
+            const origLog = logs.find(l=>l.id===req.log_id);
+            if (!reqUser || !origLog) return null;
+            return (
+              <div key={req.id} style={{background:"#0D1A0D",border:"1px solid #C9A84C33",borderRadius:10,padding:"14px",marginBottom:10}}>
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:8}}>
+                  <div>
+                    <div style={{fontSize:14,fontWeight:600}}>{reqUser.name}</div>
+                    <div style={{fontSize:11,color:"#00593D"}}>{origLog.date} · {SESSIONS[origLog.session]?.label}</div>
+                  </div>
+                  <div style={{textAlign:"right"}}>
+                    <div style={{fontSize:11,color:"#89BAAA"}}>De: <strong style={{color:"#E05C5C"}}>{origLog.result}</strong></div>
+                    <div style={{fontSize:11,color:"#89BAAA"}}>Para: <strong style={{color:"#00F1A5"}}>{req.new_result}</strong></div>
+                  </div>
+                </div>
+                <div style={{display:"flex",gap:8}}>
+                  <button onClick={async()=>{
+                    const newStatus = computeStatus(req.new_result, origLog.level, origLog.session);
+                    await updateLog(req.log_id, req.new_result, req.new_followed, newStatus);
+                    await updateEditRequest(req.id, "approved");
+                    showToast("✓ Edição aprovada!"); refresh();
+                  }} style={{flex:1,background:"#001A0F",border:"1px solid #00F1A5",color:"#00F1A5",borderRadius:8,padding:"8px",fontWeight:700,cursor:"pointer",fontSize:13}}>✓ Aprovar</button>
+                  <button onClick={async()=>{
+                    await updateEditRequest(req.id, "rejected");
+                    showToast("Edição rejeitada."); refresh();
+                  }} style={{flex:1,background:"#1A0808",border:"1px solid #E05C5C",color:"#E05C5C",borderRadius:8,padding:"8px",fontWeight:700,cursor:"pointer",fontSize:13}}>✕ Rejeitar</button>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* Performance */}
+      {tab === "performance" && (
+        <div style={{margin:"12px 16px 0"}}>
+          <div style={{fontSize:12,color:"#00593D",marginBottom:10,fontWeight:600,textTransform:"uppercase",letterSpacing:".06em"}}>📊 Lançar performance do professor</div>
+          {isDiretor ? (
+            <>
+              <ProfessorPerformanceForm profResults={profResults} showToast={showToast} refresh={refresh} fixedSession="indice"/>
+              <div style={{marginTop:12}}/>
+              <ProfessorPerformanceForm profResults={profResults} showToast={showToast} refresh={refresh} fixedSession="forex"/>
+            </>
+          ) : (
+            <ProfessorPerformanceForm profResults={profResults} showToast={showToast} refresh={refresh} fixedSession={adminCtx?.session||"indice"}/>
+          )}
+        </div>
+      )}
+
     </div>
   );
 }
