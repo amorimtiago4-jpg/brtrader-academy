@@ -287,22 +287,37 @@ const computeStatus = (result, level, sessionId) => {
   return "red";
 };
 
+const isWeekend = (dateStr) => {
+  const d = new Date(dateStr + "T12:00:00");
+  return d.getDay() === 0 || d.getDay() === 6;
+};
+
+const prevBusinessDay = (dateStr) => {
+  const d = new Date(dateStr + "T12:00:00");
+  do { d.setDate(d.getDate() - 1); } while (d.getDay() === 0 || d.getDay() === 6);
+  return d.toISOString().slice(0, 10);
+};
+
 const computeStreak = (logs, userId, session, autonomo) => {
   const ul = logs
     .filter(l => {
       if (l.userId !== userId) return false;
       if (session && l.session !== session) return false;
-      // Autônomo: conta dias com meta batida, independente de seguir o professor
       if (autonomo) return l.status === "green" || l.status === "yellow";
-      // Padrão: exige ter seguido o professor
       return l.followed;
     })
     .sort((a,b) => b.date.localeCompare(a.date));
-  let streak = 0, prev = null;
-  for (const log of ul) {
-    if (!prev) { streak = 1; prev = log.date; continue; }
-    const diff = (new Date(prev) - new Date(log.date)) / 86400000;
-    if (diff === 1) { streak++; prev = log.date; } else break;
+  if (ul.length === 0) return 0;
+  let streak = 1;
+  let prev = ul[0].date;
+  for (let i = 1; i < ul.length; i++) {
+    const expected = prevBusinessDay(prev);
+    if (ul[i].date === expected) {
+      streak++;
+      prev = ul[i].date;
+    } else {
+      break;
+    }
   }
   return streak;
 };
