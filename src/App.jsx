@@ -1061,7 +1061,7 @@ function Dashboard({ curUser, users, logs, setLogsS, setUsersS, setScreen, showT
 
       {/* Tabs */}
       <div style={{display:"flex",margin:"10px 16px 0",background:"#071410",borderRadius:8,padding:4}}>
-        {[["register","📝 Registrar"],["history","📊 Histórico"],["ranking","🏆 Ranking"]].map(([k,label]) => (
+        {[["register","📝 Registrar"],["history","📊 Histórico"],["ranking","🏆 Ranking"],["transparency","🔍 Sala"]].map(([k,label]) => (
           <button key={k} onClick={() => setTab(k)} style={{flex:1,background:tab===k?"#0D1A0D":"none",border:"none",color:tab===k?"#00F1A5":"#00593D",padding:"8px 4px",borderRadius:6,fontSize:12,fontWeight:600,cursor:"pointer"}}>
             {label}
           </button>
