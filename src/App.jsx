@@ -4,6 +4,50 @@ import { useState, useEffect } from "react";
 const SUPA_URL = "https://vuhgcsraditjquklwoor.supabase.co";
 const SUPA_KEY = process.env.REACT_APP_SUPA_KEY || "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZ1aGdjc3JhZGl0anF1a2x3b29yIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODc3NDYzNjYsImV4cCI6MjEwMzMyMjM2Nn0.e-iW0KBTbSErJXHb0X6gDw-ZDrnV5ymE3Fui0QhUtSE";
 
+// ─── SUPABASE AUTH ────────────────────────────────────────────────────────────
+const authFetch = async (path, body) => {
+  const res = await fetch(SUPA_URL + "/auth/v1" + path, {
+    method: "POST",
+    headers: {
+      "apikey": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZ1aGdjc3JhZGl0anF1a2x3b29yIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODc3NDYzNjYsImV4cCI6MjEwMzMyMjM2Nn0.e-iW0KBTbSErJXHb0X6gDw-ZDrnV5ymE3Fui0QhUtSE",
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(body),
+  });
+  return res.json();
+};
+
+const signUpAuth = async (email, password, name, code) => {
+  return authFetch("/signup", {
+    email,
+    password,
+    data: { name, code },
+    options: {
+      emailRedirectTo: "https://brtrader-academy.vercel.app",
+    },
+  });
+};
+
+const signInAuth = async (email, password) => {
+  return authFetch("/token?grant_type=password", { email, password });
+};
+
+const resetPasswordAuth = async (email) => {
+  const res = await fetch(SUPA_URL + "/auth/v1/recover", {
+    method: "POST",
+    headers: {
+      "apikey": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZ1aGdjc3JhZGl0anF1a2x3b29yIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODc3NDYzNjYsImV4cCI6MjEwMzMyMjM2Nn0.e-iW0KBTbSErJXHb0X6gDw-ZDrnV5ymE3Fui0QhUtSE",
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      email,
+      gotrue_meta_security: {},
+      options: { redirectTo: "https://brtrader-academy.vercel.app" },
+    }),
+  });
+  return res.ok;
+};
+
 const supaFetch = async (path, options = {}) => {
   const k = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZ1aGdjc3JhZGl0anF1a2x3b29yIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODc3NDYzNjYsImV4cCI6MjEwMzMyMjM2Nn0.e-iW0KBTbSErJXHb0X6gDw-ZDrnV5ymE3Fui0QhUtSE";
   const sep = path.includes("?") ? "&" : "?";
@@ -557,8 +601,12 @@ function ProfessorPerformanceForm({ profResults, showToast, refresh, fixedSessio
 
 
 function LoginScreen({ setScreen, setCurUser, setAdminCtx, users, showToast }) {
-  const [email, setEmail] = useState("");
-  const [pass, setPass]   = useState("");
+  const [email, setEmail]       = useState("");
+  const [pass, setPass]         = useState("");
+  const [recovering, setRecovering] = useState(false);
+  const [recEmail, setRecEmail] = useState("");
+  const [recLoading, setRecLoading] = useState(false);
+  const [recDone, setRecDone]   = useState(false);
 
   const login = () => {
     const admin = ADMINS[email.toLowerCase()];
@@ -568,6 +616,54 @@ function LoginScreen({ setScreen, setCurUser, setAdminCtx, users, showToast }) {
     setCurUser(user);
     setScreen("dashboard");
   };
+
+  const sendReset = async () => {
+    if (!recEmail.trim()) { showToast("Digite seu e-mail.", "error"); return; }
+    setRecLoading(true);
+    try {
+      await resetPasswordAuth(recEmail.trim().toLowerCase());
+      setRecDone(true);
+    } catch(e) {
+      showToast("Erro ao enviar. Tente novamente.", "error");
+    } finally {
+      setRecLoading(false);
+    }
+  };
+
+  if (recovering) {
+    return (
+      <div style={{minHeight:"100vh",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:24,background:"#000000"}}>
+        <div style={{marginBottom:28,textAlign:"center"}}>
+          <div style={{fontSize:26,fontWeight:800,color:"#FFFFFF",marginBottom:4}}>
+            Trader<span style={{color:"#00F1A5",fontWeight:300}}>Academy</span>
+          </div>
+        </div>
+        <div style={{background:"#0D1A0D",border:"1px solid #003D28",borderRadius:12,padding:32,width:"100%",maxWidth:380}}>
+          {recDone ? (
+            <div style={{textAlign:"center",padding:"10px 0"}}>
+              <div style={{fontSize:36,marginBottom:12}}>📧</div>
+              <div style={{fontSize:16,fontWeight:700,color:"#00F1A5",marginBottom:8}}>E-mail enviado!</div>
+              <div style={{fontSize:13,color:"#89BAAA",marginBottom:20}}>Verifique sua caixa de entrada e clique no link para redefinir sua senha.</div>
+              <button onClick={()=>{setRecovering(false);setRecDone(false);setRecEmail("");}} style={btnG}>Voltar ao login</button>
+            </div>
+          ) : (
+            <>
+              <h2 style={{margin:"0 0 8px",fontSize:18,fontWeight:700}}>Recuperar senha</h2>
+              <p style={{fontSize:13,color:"#89BAAA",marginBottom:20}}>Digite seu e-mail e enviaremos um link para redefinir sua senha.</p>
+              <label style={lbl}>E-mail</label>
+              <input value={recEmail} onChange={e=>setRecEmail(e.target.value)} style={inp} placeholder="seu@email.com" type="email" onKeyDown={e=>e.key==="Enter"&&!recLoading&&sendReset()}/>
+              <button onClick={sendReset} disabled={recLoading} style={{...btnG,opacity:recLoading?.7:1}}>
+                {recLoading?"Enviando...":"Enviar link de recuperação"}
+              </button>
+              <div style={{textAlign:"center",marginTop:14}}>
+                <span onClick={()=>setRecovering(false)} style={{color:"#00F1A5",fontSize:13,cursor:"pointer",fontWeight:600}}>← Voltar ao login</span>
+              </div>
+            </>
+          )}
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div style={{minHeight:"100vh",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:24,background:"#000000"}}>
@@ -584,7 +680,10 @@ function LoginScreen({ setScreen, setCurUser, setAdminCtx, users, showToast }) {
         <label style={lbl}>Senha</label>
         <input value={pass} onChange={e => setPass(e.target.value)} style={inp} placeholder="••••••••" type="password" onKeyDown={e => e.key === "Enter" && login()} />
         <button onClick={login} style={btnG}>Entrar</button>
-        <div style={{textAlign:"center",marginTop:14}}>
+        <div style={{textAlign:"center",marginTop:12}}>
+          <span onClick={()=>setRecovering(true)} style={{color:"#89BAAA",fontSize:12,cursor:"pointer"}}>Esqueci minha senha</span>
+        </div>
+        <div style={{textAlign:"center",marginTop:10}}>
           <span style={{color:"#89BAAA",fontSize:13}}>Sem conta? </span>
           <span onClick={() => setScreen("register")} style={{color:"#00F1A5",fontSize:13,cursor:"pointer",fontWeight:600}}>Cadastre-se</span>
         </div>
@@ -870,6 +969,54 @@ function Dashboard({ curUser, users, logs, setLogsS, setUsersS, setScreen, showT
           </div>
         )}
       </div>
+
+      {/* Card de performance do professor — sempre visível */}
+      {(() => {
+        const todayProf = (profResults||[]).filter(r => r.session === session && r.date === today());
+        const latestProf = todayProf[0];
+        const weekTotal = profWeekTotal(profResults, session);
+        const monthTotal = profMonthTotal(profResults, session);
+        if (!latestProf && weekTotal === 0 && monthTotal === 0) return null;
+        return (
+          <div style={{margin:"10px 16px 0",background:"#000000",border:"1px solid "+ses.color+"44",borderLeft:"3px solid "+ses.color,borderRadius:10,padding:"14px"}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
+              <div>
+                <div style={{fontSize:10,color:"#00593D",textTransform:"uppercase",letterSpacing:".08em",marginBottom:2}}>📊 Performance — Prof. {ses.professor}</div>
+                <div style={{fontSize:11,color:"#89BAAA"}}>{ses.icon} {ses.label}</div>
+              </div>
+              {latestProf ? (
+                <div style={{textAlign:"right"}}>
+                  <div style={{fontSize:22,fontWeight:800,color:Number(latestProf.points)>=0?"#00F1A5":"#E05C5C"}}>
+                    {Number(latestProf.points)>=0?"+":""}{latestProf.points}pts
+                  </div>
+                  <div style={{fontSize:10,color:"#00593D"}}>hoje</div>
+                </div>
+              ) : <div style={{fontSize:11,color:"#00593D"}}>Sem lançamento hoje</div>}
+            </div>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:8}}>
+              <div style={{background:"#071410",borderRadius:8,padding:"10px 8px",textAlign:"center"}}>
+                <div style={{fontSize:9,color:"#00593D",marginBottom:3,textTransform:"uppercase",letterSpacing:".06em"}}>Semana</div>
+                <div style={{fontSize:18,fontWeight:800,color:weekTotal>=0?"#00F1A5":"#E05C5C"}}>{weekTotal>=0?"+":""}{weekTotal}pts</div>
+              </div>
+              <div style={{background:"#071410",borderRadius:8,padding:"10px 8px",textAlign:"center"}}>
+                <div style={{fontSize:9,color:"#00593D",marginBottom:3,textTransform:"uppercase",letterSpacing:".06em"}}>Mês</div>
+                <div style={{fontSize:18,fontWeight:800,color:monthTotal>=0?"#00F1A5":"#E05C5C"}}>{monthTotal>=0?"+":""}{monthTotal}pts</div>
+              </div>
+            </div>
+            {latestProf?.note && <div style={{fontSize:12,color:"#89BAAA",fontStyle:"italic",textAlign:"center",marginBottom:8}}>"{latestProf.note}"</div>}
+            {(profResults||[]).filter(r=>r.session===session).slice(0,5).length > 0 && (
+              <div style={{display:"flex",gap:6,flexWrap:"wrap",justifyContent:"center"}}>
+                {(profResults||[]).filter(r=>r.session===session).slice(0,5).map(r=>(
+                  <div key={r.id} style={{background:"#071410",borderRadius:4,padding:"3px 8px",fontSize:11}}>
+                    <span style={{color:"#00593D"}}>{r.date.slice(5)}</span>
+                    <span style={{color:Number(r.points)>=0?"#00F1A5":"#E05C5C",fontWeight:700,marginLeft:4}}>{Number(r.points)>=0?"+":""}{r.points}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        );
+      })()}
 
       {/* Jornada completa */}
       <div style={{margin:"10px 16px 0",background:"#071410",border:"1px solid #003D28",borderRadius:10,padding:"14px 14px"}}>
