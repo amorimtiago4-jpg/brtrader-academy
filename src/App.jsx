@@ -287,9 +287,16 @@ const computeStatus = (result, level, sessionId) => {
   return "red";
 };
 
-const computeStreak = (logs, userId, session) => {
+const computeStreak = (logs, userId, session, autonomo) => {
   const ul = logs
-    .filter(l => l.userId === userId && l.followed && (!session || l.session === session))
+    .filter(l => {
+      if (l.userId !== userId) return false;
+      if (session && l.session !== session) return false;
+      // Autônomo: conta dias com meta batida, independente de seguir o professor
+      if (autonomo) return l.status === "green" || l.status === "yellow";
+      // Padrão: exige ter seguido o professor
+      return l.followed;
+    })
     .sort((a,b) => b.date.localeCompare(a.date));
   let streak = 0, prev = null;
   for (const log of ul) {
@@ -863,13 +870,13 @@ function Dashboard({ curUser, users, logs, setLogsS, setUsersS, setScreen, showT
   const todayLog   = logs.find(l => l.userId === user.id && l.date === today() && l.session === session);
   const ptsI       = computePoints(logs, user.id, "indice");
   const ptsF       = computePoints(logs, user.id, "forex");
-  const strkI      = computeStreak(logs, user.id, "indice");
-  const strkF      = computeStreak(logs, user.id, "forex");
+  const strkI      = computeStreak(logs, user.id, "indice", isAutonomo);
+  const strkF      = computeStreak(logs, user.id, "forex", isAutonomo);
   const isAutonomo = user.autonomo || false;
   const eligible   = checkPromotion(logs, user.id, curLevel, session, isAutonomo);
   const myLogs     = logs.filter(l => l.userId === user.id).sort((a,b) => b.date.localeCompare(a.date));
   const allUsers   = Object.values(users);
-  const rankSes    = (sid) => allUsers.map(u => ({ ...u, pts: computePoints(logs, u.id, sid), strk: computeStreak(logs, u.id, sid) })).sort((a,b) => b.pts - a.pts);
+  const rankSes    = (sid) => allUsers.map(u => ({ ...u, pts: computePoints(logs, u.id, sid), strk: computeStreak(logs, u.id, sid, u.autonomo) })).sort((a,b) => b.pts - a.pts);
 
   const submitLog = async () => {
     if (todayLog) { showToast("Resultado já registrado para esta sessão.", "error"); return; }
@@ -1261,7 +1268,7 @@ function AdminPanel({ adminCtx, users, logs, setUsersS, setLogsS, setScreen, sho
   const ranking       = allUsers.map(u => ({
     ...u,
     pts:  computePoints(logs, u.id, viewSes),
-    strk: computeStreak(logs, u.id, viewSes),
+    strk: computeStreak(logs, u.id, viewSes, u.autonomo),
     disc: (() => { const ul = logs.filter(l => l.userId===u.id && l.session===viewSes); return ul.length > 0 ? Math.round(ul.filter(l => l.followed).length / ul.length * 100) : 0; })(),
     regs: logs.filter(l => l.userId===u.id && l.session===viewSes).length,
   })).sort((a,b) => b.pts - a.pts);
