@@ -870,9 +870,9 @@ function Dashboard({ curUser, users, logs, setLogsS, setUsersS, setScreen, showT
   const todayLog   = logs.find(l => l.userId === user.id && l.date === today() && l.session === session);
   const ptsI       = computePoints(logs, user.id, "indice");
   const ptsF       = computePoints(logs, user.id, "forex");
+  const isAutonomo = user.autonomo || false;
   const strkI      = computeStreak(logs, user.id, "indice", isAutonomo);
   const strkF      = computeStreak(logs, user.id, "forex", isAutonomo);
-  const isAutonomo = user.autonomo || false;
   const eligible   = checkPromotion(logs, user.id, curLevel, session, isAutonomo);
   const myLogs     = logs.filter(l => l.userId === user.id).sort((a,b) => b.date.localeCompare(a.date));
   const allUsers   = Object.values(users);
