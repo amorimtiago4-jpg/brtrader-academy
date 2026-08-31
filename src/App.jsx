@@ -80,7 +80,7 @@ const getUsers = async () => {
       obj[u.id] = {
         id: u.id, name: u.name, email: u.email, password: u.password,
         code: u.code, levelIndice: u.level_indice, levelForex: u.level_forex,
-        createdAt: u.created_at,
+        createdAt: u.created_at, autonomo: u.autonomo || false,
       };
     });
     return obj;
@@ -107,6 +107,15 @@ const saveUser = async (user) => {
       }),
     });
   } catch(e) { console.error("saveUser:", e); throw e; }
+};
+
+const updateUserAutonomo = async (userId, autonomo) => {
+  try {
+    await supaFetch("/users?id=eq." + userId, {
+      method: "PATCH",
+      body: JSON.stringify({ autonomo }),
+    });
+  } catch(e) { console.error("updateUserAutonomo:", e); throw e; }
 };
 
 const updateUserLevel = async (userId, levelKey, newLevel) => {
@@ -320,21 +329,24 @@ const computeMonthAvg = (logs, userId, session) => {
 };
 
 // Progresso para promoção (0-100%)
-const computePromotionProgress = (logs, userId, session) => {
+const computePromotionProgress = (logs, userId, session, autonomo) => {
   const twoWeeksAgo = new Date();
   twoWeeksAgo.setDate(twoWeeksAgo.getDate() - 14);
   const recent = logs.filter(l => l.userId === userId && (!session || l.session === session) && new Date(l.date) >= twoWeeksAgo);
-  if (recent.length === 0) return { pct: 0, goodDays: 0, totalDays: 0, needed: 10 };
-  const goodDays = recent.filter(l => l.followed && (l.status === "green" || l.status === "yellow")).length;
+  if (recent.length === 0) return { pct: 0, goodDays: 0, totalDays: 0, needed: 10, autonomo: autonomo||false };
+  const goodDays = autonomo
+    ? recent.filter(l => l.status === "green" || l.status === "yellow").length
+    : recent.filter(l => l.followed && (l.status === "green" || l.status === "yellow")).length;
   return {
     pct: Math.min(100, Math.round((goodDays / 10) * 100)),
     goodDays,
     totalDays: recent.length,
     needed: Math.max(0, 10 - goodDays),
+    autonomo: autonomo||false,
   };
 };
 
-const checkPromotion = (logs, userId, currentLevel, session) => {
+const checkPromotion = (logs, userId, currentLevel, session, autonomo) => {
   if (currentLevel >= 5) return false;
   const twoWeeksAgo = new Date();
   twoWeeksAgo.setDate(twoWeeksAgo.getDate() - 14);
@@ -344,6 +356,11 @@ const checkPromotion = (logs, userId, currentLevel, session) => {
     new Date(l.date) >= twoWeeksAgo
   );
   if (recent.length < 10) return false;
+  if (autonomo) {
+    // Trader autônomo — só precisa bater a meta, não precisa seguir o professor
+    return recent.every(l => l.status === "green" || l.status === "yellow");
+  }
+  // Método padrão — precisa seguir o professor E bater a meta
   return recent.every(l => l.followed && (l.status === "green" || l.status === "yellow"));
 };
 
@@ -848,7 +865,8 @@ function Dashboard({ curUser, users, logs, setLogsS, setUsersS, setScreen, showT
   const ptsF       = computePoints(logs, user.id, "forex");
   const strkI      = computeStreak(logs, user.id, "indice");
   const strkF      = computeStreak(logs, user.id, "forex");
-  const eligible   = checkPromotion(logs, user.id, curLevel, session);
+  const isAutonomo = user.autonomo || false;
+  const eligible   = checkPromotion(logs, user.id, curLevel, session, isAutonomo);
   const myLogs     = logs.filter(l => l.userId === user.id).sort((a,b) => b.date.localeCompare(a.date));
   const allUsers   = Object.values(users);
   const rankSes    = (sid) => allUsers.map(u => ({ ...u, pts: computePoints(logs, u.id, sid), strk: computeStreak(logs, u.id, sid) })).sort((a,b) => b.pts - a.pts);
@@ -929,7 +947,7 @@ function Dashboard({ curUser, users, logs, setLogsS, setUsersS, setScreen, showT
             </div>
             {/* Progresso de promoção */}
             {(() => {
-              const prog = computePromotionProgress(logs, user.id, session);
+              const prog = computePromotionProgress(logs, user.id, session, isAutonomo);
               const monthAvg = computeMonthAvg(logs, user.id, session);
               return (
                 <>
@@ -942,8 +960,9 @@ function Dashboard({ curUser, users, logs, setLogsS, setUsersS, setScreen, showT
                       <div style={{height:"100%",width:prog.pct+"%",background:prog.pct>=100?"#00F1A5":"#C9A84C",borderRadius:4,transition:"width .5s"}}/>
                     </div>
                     <div style={{fontSize:10,color:"#00593D",marginTop:4}}>
-                      {prog.pct>=100 ? "✓ Elegível para promoção!" : prog.goodDays+" de 10 dias · faltam "+prog.needed+" dias seguindo o método"}
+                      {prog.pct>=100 ? "✓ Elegível para promoção!" : prog.goodDays+" de 10 dias · faltam "+prog.needed+(isAutonomo?" dias batendo a meta":" dias seguindo o método")}
                     </div>
+                    {isAutonomo && <div style={{marginTop:4,fontSize:10,color:"#C9A84C"}}>⭐ Modo autônomo — meta sem exigência de seguir o professor</div>}
                   </div>
                   <div style={{marginTop:6,background:"#000000",border:"1px solid #00F1A533",borderRadius:6,padding:"10px 12px",display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
                     <div>
@@ -1238,7 +1257,7 @@ function AdminPanel({ adminCtx, users, logs, setUsersS, setLogsS, setScreen, sho
   const todayLogs     = logs.filter(l => l.date === today() && l.session === viewSes);
   const usersWithLog  = todayLogs.map(l => ({ ...l, user: users[l.userId] })).filter(l => l.user);
   const usersWithout  = allUsers.filter(u => !todayLogs.find(l => l.userId === u.id));
-  const eligibles     = allUsers.filter(u => checkPromotion(logs, u.id, u[levelKey]||1, viewSes) && (u[levelKey]||1) < 5);
+  const eligibles     = allUsers.filter(u => checkPromotion(logs, u.id, u[levelKey]||1, viewSes, u.autonomo) && (u[levelKey]||1) < 5);
   const ranking       = allUsers.map(u => ({
     ...u,
     pts:  computePoints(logs, u.id, viewSes),
@@ -1352,7 +1371,17 @@ function AdminPanel({ adminCtx, users, logs, setUsersS, setLogsS, setScreen, sho
                   <div style={{fontSize:14,fontWeight:600}}>{u.name}</div>
                   <div style={{fontSize:11,color:"#00593D",fontFamily:"monospace"}}>{u.code} · desde {u.createdAt}</div>
                 </div>
-                <div style={{display:"flex",gap:4}}>
+                <div style={{display:"flex",gap:4,flexWrap:"wrap",justifyContent:"flex-end"}}>
+                  <button onClick={async()=>{
+                    const newVal = !(u.autonomo||false);
+                    await updateUserAutonomo(u.id, newVal);
+                    const updatedUsers = {...users,[u.id]:{...u,autonomo:newVal}};
+                    setUsersS(updatedUsers);
+                    showToast(u.name+(newVal?" agora é trader autônomo ⭐":" voltou ao modo padrão"));
+                    refresh();
+                  }} style={{background:u.autonomo?"#1C1800":"#071410",border:"1px solid "+(u.autonomo?"#C9A84C":"#003D28"),color:u.autonomo?"#C9A84C":"#00593D",borderRadius:6,padding:"4px 8px",cursor:"pointer",fontSize:11,fontWeight:700}}>
+                    {u.autonomo?"⭐ Autônomo":"○ Padrão"}
+                  </button>
                   <button onClick={() => promoteUser(u,false)} style={{background:"#1A0808",border:"1px solid #E05C5C33",color:"#E05C5C",borderRadius:6,padding:"4px 8px",cursor:"pointer",fontSize:12,fontWeight:700}}>↓</button>
                   <button onClick={() => promoteUser(u,true)}  style={{background:"#001A0F",border:"1px solid #00F1A533",color:"#00F1A5",borderRadius:6,padding:"4px 8px",cursor:"pointer",fontSize:12,fontWeight:700}}>↑</button>
                 </div>
@@ -1360,6 +1389,7 @@ function AdminPanel({ adminCtx, users, logs, setUsersS, setLogsS, setScreen, sho
               <div style={{display:"flex",gap:6,marginBottom:8,flexWrap:"wrap"}}>
                 <SesBadge sessionId={viewSes} />
                 <LvBadge levelId={u[levelKey]||1} />
+                {u.autonomo && <span style={{background:"#1C1800",border:"1px solid #C9A84C",color:"#C9A84C",borderRadius:4,padding:"2px 8px",fontSize:11,fontWeight:700}}>⭐ Autônomo</span>}
               </div>
               <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:6}}>
                 {[
